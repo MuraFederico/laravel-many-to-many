@@ -28,10 +28,15 @@ class Post extends Model
         return $this->belongsTo('App\Category');
     }
 
+    public function tags()
+    {
+        return $this->belongsToMany('App\Tag');
+    }
+
     public function getRouteKeyName()
     {
         return 'slug';
     }
 
-    protected $fillable = ['title', 'content', 'slug', 'user_id', 'media', 'likes', 'comments'];
+    protected $fillable = ['title', 'content', 'slug', 'user_id', 'category_id', 'media', 'likes', 'comments'];
 }
