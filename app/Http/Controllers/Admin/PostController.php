@@ -5,9 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Post;
 use App\Category;
+use App\Tag;
+use App\User;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Routing\Route;
 
 class PostController extends Controller
 {
@@ -26,6 +29,7 @@ class PostController extends Controller
      */
     public function index()
     {
+        // dd(Post::where('title', 'gfwreisdhjb')->first());
         $posts = Post::paginate(5);
 
         // dd($posts);
@@ -65,12 +69,46 @@ class PostController extends Controller
             'title'     => 'required|max:100',
             'content'   => 'required',
             'media'     => 'required|URL',
-
+            'slug'      => [
+                'required',
+                'max:100',
+            ],
+            'category_id'   => 'required|exists:App\Category,id',
+            'tags'          => 'exists:App\Tag,id',
         ];
 
         $request->validate($validators);
 
-        $post = Post::create($request->all() + ['user_id' => Auth::user()->id ]);
+        $formData = $request->all() + [
+            'user_id' => Auth::user()->id
+        ];
+
+        preg_match_all('/#(\S*)/', $formData['content'], $tags_from_content);
+        // TODO: gestire i tag già presenti nel database (evitare doppioni)
+        $tagIds = [];
+        foreach($tags_from_content[1] as $tag) {
+
+
+            // dd($tag);
+            if(!Tag::where('name', $tag)->first()) {
+
+                $newTag = Tag::create([
+                    'name'  => $tag,
+                    //'slug'  => Str::slug($tag)
+                    'slug'  => Post::generateSlug($tag)
+                ]);
+
+                $tagIds[] = $newTag->id;
+            }else {
+                $tagIds[] = Tag::where('name', $tag)->first()->id;
+            }
+        }
+
+        $formData['tags'] = $tagIds;
+
+        $post = Post::create($formData);
+
+        $post->tags()->attach($formData['tags']);
 
        return redirect()->route('admin.posts.show', $post->slug);
     }
@@ -119,13 +157,38 @@ class PostController extends Controller
             'slug'      => [
                 'required',
                 Rule::unique('posts')->ignore($post),
-                'max:100'
+                'max:100',
             ],
+            'category_id'   => 'required|exists:App\Category,id',
+            'tags'          => 'exists:App\Tag,id',
         ];
 
         $request->validate($validators);
+        $formData = $request->all();
+
+        preg_match_all('/#(\S*)/', $formData['content'], $tags_from_content);
+
+        $tagIds = [];
+        foreach($tags_from_content[1] as $tag) {
+
+            if(!Tag::where('name', $tag)->first()) {
+
+                $newTag = Tag::create([
+                    'name'  => $tag,
+                    'slug'  => Post::generateSlug($tag)
+                ]);
+
+                $tagIds[] = $newTag->id;
+            }else {
+                $tagIds[] = Tag::where('name', $tag)->first()->id;
+            }
+        }
+
+        $formData['tags'] = $tagIds;
+
 
         $post->update($request->all());
+        $post->tags()->sync($formData['tags']);
 
         return redirect()->route('admin.posts.show', $post->slug);
     }
@@ -140,8 +203,8 @@ class PostController extends Controller
     {
         if (Auth::user()->id !== $post->user_id) abort(403);
 
+        $post->tags()->detach();
         $post->delete();
-
         return redirect()->route('admin.posts.index');
     }
 }
